@@ -180,13 +180,31 @@ public sealed class InstallerContractTests
         // install above may just have deleted. Setup therefore starts the new version itself
         // instead of leaving the user with a closed launcher (ADR-047).
         Assert.Contains(
-            "Filename: \"{app}\\{#EXECUTABLE_NAME}\"; Description: \"{cm:LaunchProgram,Cafe Launcher}\"; Flags: nowait postinstall skipifsilent",
+            "Filename: \"{app}\\{#EXECUTABLE_NAME}\"; Description: \"{cm:LaunchProgram,Cafe Launcher}\"; Flags: nowait postinstall skipifsilent runasoriginaluser",
             script,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Filename: \"{app}\\{#EXECUTABLE_NAME}\"; Flags: nowait skipifnotsilent",
+            "Filename: \"{app}\\{#EXECUTABLE_NAME}\"; Flags: nowait skipifnotsilent runasoriginaluser",
             script,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IssInstaller_RunEntriesPreserveTheOriginalUser()
+    {
+        var script = ReadProjectFile("installer/windows/Cafe.Launcher.iss");
+        var runSection = script.Split("[Run]", StringSplitOptions.None)[1]
+            .Split("[UninstallDelete]", StringSplitOptions.None)[0];
+        var entries = runSection.Split('\n')
+            .Where(line => line.StartsWith("Filename:", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, entries.Length);
+        Assert.All(entries, entry => Assert.Contains("runasoriginaluser", entry, StringComparison.Ordinal));
+
+        // Pre-elevating Setup prevents runasoriginaluser from recovering the caller's token.
+        var updater = ReadProjectFile("src/Cafe.Launcher.Updater.Core/UpdateApplier.cs");
+        Assert.DoesNotContain("Verb = \"runas\"", updater, StringComparison.Ordinal);
     }
 
     [Fact]

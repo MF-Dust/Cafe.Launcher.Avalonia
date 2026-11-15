@@ -81,7 +81,7 @@ public static class UpdateApplier
             FileName = arguments.PackagePath,
             Arguments = "/SILENT /SUPPRESSMSGBOXES /NORESTART",
             UseShellExecute = true,
-            Verb = "runas",
+            // Let Setup elevate itself so it retains the pre-UAC user for relaunch.
             WorkingDirectory = Path.GetDirectoryName(arguments.PackagePath) ?? ""
         };
 
