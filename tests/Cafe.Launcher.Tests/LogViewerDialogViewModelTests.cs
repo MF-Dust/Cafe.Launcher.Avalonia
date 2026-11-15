@@ -73,6 +73,24 @@ public sealed class LogViewerDialogViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task CloseCommand_WhileLoading_DoesNotRetainTheCompletedSnapshot()
+    {
+        var loaded = new TaskCompletionSource<IReadOnlyList<LogEntryDisplay>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var viewModel = new LogViewerDialogViewModel(
+            logger, new ToastService(), new LocalizationService(), new LocalDiagnostics(), _ => loaded.Task);
+        var opening = viewModel.OpenCommand.ExecuteAsync(null);
+
+        viewModel.CloseCommand.Execute(null);
+        loaded.SetResult(Enumerable.Range(0, 600).Select(_ => new LogEntryDisplay()).ToArray());
+        await opening;
+
+        Assert.False(viewModel.IsVisible);
+        Assert.Empty(viewModel.FilteredEntries);
+        Assert.False(viewModel.HasEarlierEntries);
+    }
+
+    [Fact]
     public async Task CloseCommand_HidesDialog()
     {
         await logger.LogAsync(LogEntrySeverity.Info, "Launcher started");
@@ -164,6 +182,65 @@ public sealed class LogViewerDialogViewModelTests : IDisposable
         Assert.Equal(600, viewModel.FilteredEntries.Count);
         Assert.Equal("Entry 000", viewModel.FilteredEntries[0].Title);
         Assert.False(viewModel.HasEarlierEntries);
+    }
+
+    [Fact]
+    public async Task LoadEarlierCommand_AcrossPages_UsesOpeningSnapshotAndReopenRefreshesIt()
+    {
+        var loadCount = 0;
+        IReadOnlyList<LogEntryDisplay> entries = Enumerable.Range(0, 1200)
+            .Select(index => new LogEntryDisplay { Title = $"Entry {index:D4}" }).ToArray();
+        var viewModel = new LogViewerDialogViewModel(
+            logger, new ToastService(), new LocalizationService(), new LocalDiagnostics(),
+            _ =>
+            {
+                loadCount++;
+                return Task.FromResult(entries);
+            });
+
+        await viewModel.OpenCommand.ExecuteAsync(null);
+        Assert.Equal(500, viewModel.FilteredEntries.Count);
+        entries = [new LogEntryDisplay { Title = "New snapshot" }];
+
+        await viewModel.LoadEarlierCommand.ExecuteAsync(null);
+        Assert.Equal(1000, viewModel.FilteredEntries.Count);
+        Assert.Equal("Entry 0200", viewModel.FilteredEntries[0].Title);
+        await viewModel.LoadEarlierCommand.ExecuteAsync(null);
+        Assert.Equal(1200, viewModel.FilteredEntries.Count);
+        Assert.Equal("Entry 0000", viewModel.FilteredEntries[0].Title);
+        Assert.False(viewModel.HasEarlierEntries);
+        Assert.False(viewModel.LoadEarlierCommand.CanExecute(null));
+        Assert.Equal(1, loadCount);
+
+        viewModel.CloseCommand.Execute(null);
+        Assert.Empty(viewModel.FilteredEntries);
+        await viewModel.OpenCommand.ExecuteAsync(null);
+
+        Assert.Equal("New snapshot", Assert.Single(viewModel.FilteredEntries).Title);
+        Assert.Equal(2, loadCount);
+        Assert.False(viewModel.HasEarlierEntries);
+    }
+
+    [Fact]
+    public async Task OpenCommand_AfterReadFailure_ClearsThePreviousSnapshot()
+    {
+        var toastService = new ToastService();
+        var readFails = false;
+        var viewModel = new LogViewerDialogViewModel(
+            logger, toastService, new LocalizationService(), new LocalDiagnostics(),
+            _ => readFails
+                ? Task.FromException<IReadOnlyList<LogEntryDisplay>>(new IOException("read failed"))
+                : Task.FromResult<IReadOnlyList<LogEntryDisplay>>(
+                    Enumerable.Range(0, 600).Select(_ => new LogEntryDisplay()).ToArray()));
+        await viewModel.OpenCommand.ExecuteAsync(null);
+        Assert.True(viewModel.HasEarlierEntries);
+        readFails = true;
+
+        await viewModel.OpenCommand.ExecuteAsync(null);
+
+        Assert.Empty(viewModel.FilteredEntries);
+        Assert.False(viewModel.HasEarlierEntries);
+        Assert.False(viewModel.LoadEarlierCommand.CanExecute(null));
     }
 
     [Fact]

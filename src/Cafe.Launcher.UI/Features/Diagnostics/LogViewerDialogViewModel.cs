@@ -28,13 +28,13 @@ internal sealed partial class LogViewerDialogViewModel : ObservableObject, IModa
     private IReadOnlyList<LogEntryDisplay> allEntries = [];
     private readonly LatestRefresh filterRefresh = new();
     private int loadedPageCount = 1;
-    private int totalEntryCount;
+    private IReadOnlyList<LogEntryDisplay> snapshotEntries = [];
 
     /// <summary>Gets the active debounced filter operation for deterministic coordination.</summary>
     internal Task PendingFilterTask => filterRefresh.Pending;
 
     /// <summary>Gets whether another 500-entry page is available before the loaded entries.</summary>
-    public bool HasEarlierEntries => allEntries.Count < totalEntryCount;
+    public bool HasEarlierEntries => allEntries.Count < snapshotEntries.Count;
 
     [ObservableProperty]
     private bool isVisible;
@@ -119,9 +119,17 @@ internal sealed partial class LogViewerDialogViewModel : ObservableObject, IModa
     {
         IsVisible = true;
         loadedPageCount = 1;
+        snapshotEntries = [];
+        SetLoadedEntries();
+        ApplyFilter();
         try
         {
-            SetLoadedEntries(await entryLoader(cancellationToken));
+            var entries = await entryLoader(cancellationToken);
+            if (!IsVisible)
+                return;
+
+            snapshotEntries = entries;
+            SetLoadedEntries();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -142,7 +150,8 @@ internal sealed partial class LogViewerDialogViewModel : ObservableObject, IModa
                 ex,
                 CancellationToken.None);
 
-            allEntries = [];
+            snapshotEntries = [];
+            SetLoadedEntries();
         }
 
         ApplyFilter();
@@ -153,35 +162,22 @@ internal sealed partial class LogViewerDialogViewModel : ObservableObject, IModa
     {
         filterRefresh.Cancel();
         IsVisible = false;
+        snapshotEntries = [];
+        SetLoadedEntries();
+        ApplyFilter();
     }
 
     [RelayCommand(CanExecute = nameof(HasEarlierEntries))]
-    private async Task LoadEarlierAsync(CancellationToken cancellationToken)
+    private Task LoadEarlierAsync()
     {
-        loadedPageCount++;
-        try
+        if (HasEarlierEntries)
         {
-            SetLoadedEntries(await entryLoader(cancellationToken));
+            loadedPageCount++;
+            SetLoadedEntries();
             ApplyFilter();
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            loadedPageCount--;
-        }
-        catch (Exception ex)
-        {
-            loadedPageCount--;
-            toastService.ShowError(ErrorHandlingService.FormatToastMessage(
-                localizer.T(LocalizationKeys.LogLoadFailed),
-                ex,
-                localizer.T(LocalizationKeys.ErrorNetworkUnavailable),
-                localizer.T(LocalizationKeys.ErrorFakeIpDns)));
-            await diagnostics.ErrorAsync(
-                "LogViewer",
-                "Loading the earlier log entries failed.",
-                ex,
-                CancellationToken.None);
-        }
+
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -199,11 +195,10 @@ internal sealed partial class LogViewerDialogViewModel : ObservableObject, IModa
     [RelayCommand]
     private void SetFilterFatal() => SeverityFilter = LogEntrySeverity.Fatal;
 
-    private void SetLoadedEntries(IReadOnlyList<LogEntryDisplay> entries)
+    private void SetLoadedEntries()
     {
-        totalEntryCount = entries.Count;
-        var takeCount = Math.Min(entries.Count, checked(loadedPageCount * PageSize));
-        allEntries = entries.Skip(entries.Count - takeCount).ToArray();
+        var takeCount = Math.Min(snapshotEntries.Count, checked(loadedPageCount * PageSize));
+        allEntries = snapshotEntries.Skip(snapshotEntries.Count - takeCount).ToArray();
         OnPropertyChanged(nameof(HasEarlierEntries));
         LoadEarlierCommand.NotifyCanExecuteChanged();
     }
