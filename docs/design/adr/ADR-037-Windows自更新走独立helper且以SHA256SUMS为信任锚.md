@@ -1,6 +1,6 @@
 # ADR-037：Windows 启动器自更新走独立 helper，且以 SHA256SUMS 为信任锚
 
-- 状态：✅ 已接受（2026-09-23；2026-09-25 与 2026-09-27 各有一次修订，见文末）
+- 状态：✅ 已接受（2026-09-23；2026-09-25、2026-09-27 与 2026-11-15 修订，见文末；来源证明方案另见待裁决 ADR-062）
 - 日期：2026-09-23
 - 相关：`Services/LauncherUpdateService.cs`、`Features/Shell/ShellLifecycle.cs`、`src/Cafe.Launcher.Updater.Core/`、`src/Cafe.Launcher.Updater/`、`scripts/Build-Distribution.ps1`、`installer/windows/Cafe.Launcher.iss`
 
@@ -57,3 +57,9 @@ Windows 的现实约束：
 - 参数序列化与严格解析由 `UpdaterArguments` 同一处拥有；主程序不手拼内部协议。
 - 退出状态由 `UpdaterExitCode` 命名并固定，区分参数错误、父进程超时、完整性失败、安装器失败、目录换位失败和已回滚等结果，日志继续承载细节。
 - `--help` 只说明这是 internal protocol；不增加下载、检查更新、选择资产、任意 URL、JSON 输出或面向脚本的兼容承诺。若未来确需公开 CLI，应另立决策并重新审视鉴权、稳定性和支持边界。
+
+## 修订（2026-11-15）：由安装器自行提权，保留原用户令牌
+
+第 4 条的 helper 显式 `runas` 改为普通 Shell 启动，UAC 仍由要求管理员权限的 Inno 安装器发起；两条 `[Run]` 均显式声明 `runasoriginaluser`。Inno 的交互 `postinstall` 本就默认使用原用户，静默条目则不是；更重要的是，预先 `runas` 会使安装器无法取得提权前的令牌，仅加 flag 不足以解决该路径。
+
+旧版 helper 仍会预先提权，手动「以管理员身份运行」也有同样限制；本次变更不能追溯修复旧 helper。安装后需退出并从普通用户会话重新打开。标准用户输入另一管理员凭据的 VM 运行时验收尚未执行。当前行为以 `CONTEXT.md` 为准，来源证明的候选方案见 [ADR-062](ADR-062-自更新独立来源证明方案待裁决.md)，此修订不改变现有 SHA256SUMS 策略。
