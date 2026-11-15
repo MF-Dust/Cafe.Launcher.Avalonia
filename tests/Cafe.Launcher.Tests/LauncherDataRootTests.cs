@@ -31,6 +31,25 @@ public sealed class LauncherDataRootTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void EnsureCreated_OnUnix_CreatesPrivateRootAndPreservesExistingPermissions()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix permissions only.");
+        var root = new LauncherDataRoot(tempDir.Sub("private-root"));
+
+        root.EnsureCreated();
+
+        var privateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        Assert.Equal(privateMode, File.GetUnixFileMode(root.Root));
+        var customMode = privateMode | UnixFileMode.GroupRead | UnixFileMode.GroupExecute;
+        File.SetUnixFileMode(root.Root, customMode);
+
+        root.EnsureCreated();
+
+        Assert.Equal(customMode, File.GetUnixFileMode(root.Root));
+    }
+
+    [Fact]
     public void NamedPaths_AllLiveDirectlyUnderRoot_WithTheDeclaredNames()
     {
         var dataRoot = new LauncherDataRoot(tempDir);

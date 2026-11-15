@@ -105,6 +105,8 @@ _Avoid_: 许可证同意、隐私弹窗
 启动器私有数据的根目录，也是根内知名路径的唯一出处（`LauncherDataRoot`）。所有平台只有一个根：Windows 为 `%LOCALAPPDATA%\Cafe Launcher`，macOS 为 `LocalApplicationData` 下的 `Cafe Launcher`；Linux 为 `$XDG_DATA_HOME/cafe-launcher`（未设置有效绝对路径时使用 `~/.local/share/cafe-launcher`），设置、日志、缓存、检查点与兼容前缀都在其中（[ADR-049](docs/design/adr/ADR-049-Linux保留单一数据根并统一小写目录名.md)）。Linux 升级尝试迁移同一数据主目录下旧的 `Cafe Launcher`，保留目标已有内容与未能迁移的旧文件。进程根解析、注入和测试隔离规则见[规范 §9](PROJECT_CONVENTIONS.md#9-settings-与持久化兼容性)。
 _Avoid_: 用户数据目录、应用数据目录
 
+Unix 首次创建数据根时使用仅属主可访问的目录权限（0700），保留已有目录的权限、不递归修改旧数据；原子 JSON 状态写入在序列化前收紧临时文件权限（0600），替换后的状态文件沿用该权限。权限设置失败只记 Warn 并继续；Windows 权限行为不变。
+
 ### 网络与下载
 
 **客户端偏好**:

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using Cafe.Launcher.Core.Constants;
+using Cafe.Launcher.Core.Services.Diagnostics;
 
 namespace Cafe.Launcher.Core.Services;
 
@@ -56,6 +57,27 @@ public sealed class LauncherDataRoot
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         Root = Path.GetFullPath(root);
+    }
+
+    /// <summary>创建私有数据根；已有目录保留用户设置的权限，不递归修改。</summary>
+    internal void EnsureCreated()
+    {
+        if (OperatingSystem.IsWindows() || Directory.Exists(Root))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Root,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            LocalDiagnostics.LogSync(LogEntrySeverity.Warn, "DataRoot",
+                $"Could not create a private data directory: {exception.Message}");
+            Directory.CreateDirectory(Root);
+        }
     }
 
     /// <summary>数据根：设置、日志、缓存、检查点与受管兼容环境都放在这里。</summary>
@@ -195,6 +217,7 @@ public sealed class LauncherDataRoot
             : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
         var root = ResolveLayout(productName, testOverride, isUnix, dataHome);
+        root.EnsureCreated();
 
         // 迁移只在 Unix 的生产路径上尝试一次。测试覆盖已经指向隔离目录，不走这里。
         if (isUnix && string.IsNullOrWhiteSpace(testOverride)

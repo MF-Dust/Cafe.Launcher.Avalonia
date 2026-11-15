@@ -31,5 +31,24 @@ public sealed class AtomicJsonFileStoreTests
         }
     }
 
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public async Task WriteAsync_OnUnix_RestrictsNewAndReplacedStateFiles()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix permissions only.");
+        using var directory = TestDirectory.Create();
+        var path = Path.Combine(directory, "settings.json");
+        var privateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        await AtomicJsonFileStore.WriteAsync(path, new TestState("new", 1), JsonDefaults.Strict);
+        Assert.Equal(privateMode, File.GetUnixFileMode(path));
+        File.SetUnixFileMode(path, privateMode | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+
+        await AtomicJsonFileStore.WriteAsync(path, new TestState("replaced", 2), JsonDefaults.Strict);
+
+        Assert.Equal(privateMode, File.GetUnixFileMode(path));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
     private sealed record TestState(string Status, int Attempt);
 }

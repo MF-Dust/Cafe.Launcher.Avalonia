@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Cafe.Launcher.Core.Services.Diagnostics;
 
 namespace Cafe.Launcher.Core.Helpers;
 
@@ -41,6 +42,20 @@ public static class AtomicJsonFileStore
         {
             await using (var stream = File.Create(temporaryPath))
             {
+                if (!OperatingSystem.IsWindows())
+                {
+                    try
+                    {
+                        // Restrict the empty temporary file before writing any private state.
+                        File.SetUnixFileMode(temporaryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+                    {
+                        LocalDiagnostics.LogSync(LogEntrySeverity.Warn, "FileStore",
+                            $"Could not restrict state file permissions: {exception.Message}");
+                    }
+                }
+
                 await JsonSerializer.SerializeAsync(
                     stream,
                     value,
